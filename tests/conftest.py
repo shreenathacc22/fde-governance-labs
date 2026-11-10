@@ -30,6 +30,11 @@ def pytest_addoption(parser):
         default="file",
         help="file: read controls.toml (default); on/off: force every control on or off",
     )
+    parser.addoption(
+        "--candidate",
+        default="v1",
+        help="Lab 4 (your turn): the release the tests run against (release.py deploy passes the candidate)",
+    )
 
 
 def _controls(config) -> Controls:
@@ -50,12 +55,12 @@ def pytest_runtest_setup(item):
 
 
 class Lab:
-    def __init__(self, controls: Controls, tmp_path) -> None:
+    def __init__(self, controls: Controls, tmp_path, candidate: str = "v1") -> None:
         self.controls = controls
         self.db = CustomerDB()
         # The human approver. Says yes unless a test sets human.approve = False.
         self.human = AutoApprover(approve=True, name="test-approver")
-        self.releases = open_releases(controls, tmp_path / "state")
+        self.releases = open_releases(controls, tmp_path / "state", first=candidate)
         self.traces_dir = tmp_path / "traces"
         self.agent = SupportAgent(
             model=ScriptedModel(),
@@ -89,4 +94,4 @@ class Lab:
 
 @pytest.fixture
 def lab(request, tmp_path) -> Lab:
-    return Lab(_controls(request.config), tmp_path)
+    return Lab(_controls(request.config), tmp_path, request.config.getoption("candidate"))

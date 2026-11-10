@@ -15,11 +15,28 @@ that was live when it happened.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import Release
+
+
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def redact(value):
+    """Lab 3 (your turn): email addresses never reach the trace file. Traces are
+    read by more people, for longer, than the database; the data owner decides
+    who sees an address, and a trace must not widen that."""
+    if isinstance(value, str):
+        return EMAIL.sub("[email redacted]", value)
+    if isinstance(value, dict):
+        return {k: redact(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [redact(v) for v in value]
+    return value
 
 
 def new_run_id() -> str:
@@ -43,7 +60,7 @@ class TraceFile:
             "customer_id": self.customer_id,
             "release": release.version,
             "release_hash": release.hash,
-            **fields,
+            **redact(fields),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a") as f:

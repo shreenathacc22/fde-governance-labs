@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 
 from .config import InPlaceConfig, Release
-from .controls.approvals import ApprovalRequest, Approver, Decision
+from .controls.approvals import ApprovalRequest, Approver, Decision, policy_waiver
 from .controls.rollback import ReleaseHistory
 from .controls.scope import in_scope
 from .controls.traces import NoTrace, TraceFile, new_run_id
@@ -109,6 +109,7 @@ class SupportAgent:
                 "approver": decision.approver,
                 "approved": decision.approved,
                 "note": decision.note,
+                **({"flag": decision.flag} if decision.flag else {}),   # Lab 5 (your turn): only when there is one
             },
             output=result,
         )
@@ -130,10 +131,19 @@ class SupportAgent:
         decision = None
         if self.controls.approvals and tool.irreversible:
             said = next((m["content"] for m in reversed(convo.messages) if m["role"] == "user"), "")
-            decision = self.approver.decide(
-                ApprovalRequest(call.name, call.args, convo.customer_id, release.version, customer_said=said)
-            )
+            waiver = policy_waiver(call.name, call.args)
+            if waiver:                                   # Lab 1 (your turn): small refunds; recorded, not skipped
+                decision = Decision(True, approver="policy", note=waiver)
+            else:
+                decision = self.approver.decide(
+                    ApprovalRequest(call.name, call.args, convo.customer_id, release.version, customer_said=said)
+                )
             if not decision.approved:
                 return refused("not_approved", f"{decision.approver} did not approve"), decision
 
-        return run_tool(tool, self.db, release, call.args), decision
+        # Lab 2 (your turn): with scoped access on, tools get a view of the database
+        # bound to this conversation's customer, so the check holds for every tool,
+        # whatever it calls its arguments. The argument check above stays as the
+        # cheap first line, so nobody is asked to approve a call that can never run.
+        db = self.db.scoped_to(convo.customer_id) if self.controls.scoped_access else self.db
+        return run_tool(tool, db, release, call.args), decision

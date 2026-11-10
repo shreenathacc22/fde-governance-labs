@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Callable
 
 from .config import Release
-from .db import CustomerDB, UnknownCustomer, dollars
+from .db import CustomerDB, OutOfScope, UnknownCustomer, dollars
 
 
 class ToolError(Exception):
@@ -136,6 +136,8 @@ def run_tool(tool: Tool, db: CustomerDB, release: Release, args: dict) -> dict:
         return refused("bad_arguments", f"missing {missing}, unexpected {extra}")
     try:
         return {"ok": True, "data": tool.fn(db, release.tools[tool.name], **args)}
+    except OutOfScope as e:                       # Lab 2 (your turn): the database said no, whatever the argument was called
+        return refused("out_of_scope", str(e))
     except (ToolError, UnknownCustomer) as e:
         return refused("tool_error", str(e))
 

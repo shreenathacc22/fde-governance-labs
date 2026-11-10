@@ -14,12 +14,31 @@ release every turn and the kill switch on every tool call.
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 
 from bankagent.app import open_releases
 from bankagent.config import KillSwitchUnavailable, RollbackUnavailable
 from bankagent.controls.rollback import ReleaseHistory
-from bankagent.settings import STATE_DIR, Controls
+from bankagent.settings import ROOT, STATE_DIR, Controls
+
+# Lab 4 (your turn): the ceiling risk and compliance signed for a refund the
+# agent may issue. tests/test_your_turn.py checks every candidate release
+# against it, and deploy refuses a release whose tests fail.
+REFUND_CEILING_DOLLARS = 100
+
+
+def preflight(version: str) -> tuple[bool, str]:
+    """Run the test suite with `version` as the first release deployed into the
+    tests' own temporary state. Returns (passed, output). Nothing live changes."""
+    env = {**os.environ, "BANKAGENT_PREFLIGHT": "1"}      # the inner run skips the tests that call preflight()
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--controls=on",
+         "--candidate", version, str(ROOT / "tests")],
+        cwd=ROOT, capture_output=True, text=True, env=env, timeout=120,
+    )
+    return proc.returncode == 0, proc.stdout + proc.stderr
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,7 +47,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="file: read controls.toml (default); on/off: force every control")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="what is live, and what happened before")
-    commands.add_parser("deploy", help="make a release live").add_argument("version")
+    deploy = commands.add_parser("deploy", help="make a release live (runs the tests against it first)")
+    deploy.add_argument("version")
+    deploy.add_argument("--skip-tests", action="store_true", help="deploy even if the tests fail (logged)")
     commands.add_parser("rollback", help="go back to the previous release")
     commands.add_parser("disable", help="kill switch: turn one tool off").add_argument("tool")
     commands.add_parser("enable", help="turn a tool back on").add_argument("tool")
@@ -47,6 +68,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             print_status(releases)
         elif args.command == "deploy":
+            if not args.skip_tests:
+                print(f"Running the tests against {args.version} before it goes live …")
+                ok, output = preflight(args.version)
+                if not ok:
+                    summary = [l for l in output.splitlines() if l.startswith(("FAILED", "ERROR")) or "failed" in l][-6:]
+                    print(f"Refused: the tests fail against {args.version}. Live release is still {before.version}.", file=sys.stderr)
+                    print("\n".join("  " + l for l in summary), file=sys.stderr)
+                    return 1
+                print("  tests pass.")
             live = releases.deploy(args.version)
             print(f"Deployed. Live release: {live.version} (hash {live.hash})")
         elif args.command == "rollback":

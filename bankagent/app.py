@@ -16,13 +16,14 @@ FIRST_RELEASE = "v1"
 
 
 def open_releases(
-    controls: Controls, state_dir: Path = STATE_DIR, releases_dir: Path = RELEASES_DIR
+    controls: Controls, state_dir: Path = STATE_DIR, releases_dir: Path = RELEASES_DIR, first: str = FIRST_RELEASE
 ) -> InPlaceConfig | ReleaseHistory:
-    """The starter overwrites config in place; with the rollback control on, every release is kept."""
+    """The starter overwrites config in place; with the rollback control on, every release is kept.
+    `first` is the release that goes live in an empty state (the tests pass a candidate)."""
     store_type = ReleaseHistory if controls.rollback else InPlaceConfig
     store = store_type(state_dir, releases_dir)
     if not store.has_live():
-        store.deploy(FIRST_RELEASE)
+        store.deploy(first)
     return store
 
 

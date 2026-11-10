@@ -36,6 +36,10 @@ class UnknownCustomer(LookupError):
     pass
 
 
+class OutOfScope(PermissionError):
+    """Lab 2 (your turn): a read or write on a record outside the bound customer."""
+
+
 class CustomerDB:
     def __init__(self) -> None:
         self._rows = {c.customer_id: replace(c) for c in SEED}
@@ -59,6 +63,40 @@ class CustomerDB:
         customer = self.get(customer_id)
         customer.status = "closed"
         return customer
+
+    def scoped_to(self, customer_id: str) -> "ScopedDB":
+        """Lab 2 (your turn): a view of this database that can only touch one customer.
+        The agent hands tools this view, so the check does not depend on a tool
+        naming its customer in an argument called customer_id."""
+        return ScopedDB(self, customer_id)
+
+
+class ScopedDB:
+    """Every read and write goes through _check() first; nothing else is reachable."""
+
+    def __init__(self, inner: CustomerDB, bound_customer_id: str) -> None:
+        self._inner = inner
+        self.bound = bound_customer_id
+
+    def _check(self, customer_id: str) -> None:
+        if customer_id != self.bound:
+            raise OutOfScope(f"this conversation is bound to {self.bound}; {customer_id} is out of scope")
+
+    def get(self, customer_id: str) -> Customer:
+        self._check(customer_id)
+        return self._inner.get(customer_id)
+
+    def credit(self, customer_id: str, cents: int) -> Customer:
+        self._check(customer_id)
+        return self._inner.credit(customer_id, cents)
+
+    def close(self, customer_id: str) -> Customer:
+        self._check(customer_id)
+        return self._inner.close(customer_id)
+
+    @property
+    def reads(self) -> list[str]:
+        return self._inner.reads
 
 
 def dollars(cents: int) -> str:
